@@ -55,7 +55,7 @@ export default function LocationSearch({ onLocationSelect }: LocationSearchProps
   return (
     <div className="relative w-full max-w-xs" onBlur={handleBlur}> {/* Added onBlur */} 
       <label htmlFor="location-search" className="block text-sm font-medium mb-1">
-        Search Location
+        Buscar ubicación
       </label>
       <input
         id="location-search"
@@ -63,14 +63,14 @@ export default function LocationSearch({ onLocationSelect }: LocationSearchProps
         value={searchTerm}
         onChange={handleInputChange}
         onFocus={() => searchTerm && setShowSuggestions(true)} // Show on focus if there's text
-        placeholder="e.g., London, UK"
+        placeholder="p. ej., Madrid, España"
         className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100"
       />
 
       {showSuggestions && (
           <div className="absolute z-10 mt-1 w-full bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-md shadow-lg max-h-60 overflow-y-auto">
-          {isLoading && <div className="px-3 py-2 text-sm text-neutral-500">Loading...</div>}
-          {error && <div className="px-3 py-2 text-sm text-red-500">Error fetching locations.</div>}
+          {isLoading && <div className="px-3 py-2 text-sm text-neutral-500">Cargando...</div>}
+          {error && <div className="px-3 py-2 text-sm text-red-500">Error al buscar ubicaciones.</div>}
           {suggestions && suggestions.length > 0 && (
             <ul>
               {suggestions.map((location) => (
@@ -89,7 +89,7 @@ export default function LocationSearch({ onLocationSelect }: LocationSearchProps
             </ul>
           )}
           {suggestions && suggestions.length === 0 && debouncedSearchTerm && !isLoading && (
-             <div className="px-3 py-2 text-sm text-neutral-500">No locations found.</div>
+             <div className="px-3 py-2 text-sm text-neutral-500">No se encontraron ubicaciones.</div>
           )}
         </div>
       )}

@@ -107,8 +107,8 @@ export async function GET(request: NextRequest) {
         hourly: FORECAST_HOURLY_VARIABLES.join(','),
         // Usar America/Argentina/Buenos_Aires para Argentina (cerca de Rosario)
         timezone: 'America/Argentina/Buenos_Aires',
-        // Usar forecast_days=1 en lugar de forecast_hours=24
-        forecast_days: 1
+        // Cambiado a forecast_days=2 para cubrir rangos que cruzan la medianoche
+        forecast_days: 2
         // forecast_hours: 24, // Comentado
     };
 

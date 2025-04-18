@@ -23,7 +23,7 @@ export default function ProjectionHoursSelector({
   return (
     <div className="w-full max-w-xs">
       <label htmlFor="hours-selector" className="block text-sm font-medium mb-1">
-        Projection Hours Ahead
+        Horas de proyección
       </label>
       <select
         id="hours-selector"
@@ -33,7 +33,7 @@ export default function ProjectionHoursSelector({
       >
         {options.map(hours => (
           <option key={hours} value={hours}>
-            {hours} hours
+            {hours} horas
           </option>
         ))}
       </select>

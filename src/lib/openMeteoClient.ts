@@ -83,7 +83,7 @@ export async function getForecastData(coords: Coordinates): Promise<WeatherDataP
         longitude: coords.longitude,
         hourly: HOURLY_VARIABLES.join(','),
         timezone: 'America/Argentina/Buenos_Aires',
-        forecast_days: 1
+        forecast_days: 2
       },
       timeout: 10000 // 10 segundos
     });
@@ -187,31 +187,46 @@ export async function getProjectionData(coords: Coordinates, hoursAhead: number)
     const historicalAverages = calculateAverages(allHourlyData);
     
     // Filtrar por hora: mostrar desde una hora antes de la hora actual
-    const filteredAverages = historicalAverages.filter(dataPoint => {
+    const startHour = currentHour > 0 ? currentHour - 1 : 23; // Si es hora 0, mostrar desde hora 23
+    const endHour = (currentHour + hoursAhead) % 24; // Calcular la hora final (módulo 24 para manejar el ciclo de 24 horas)
+    
+    console.log(`Filtrando desde hora ${startHour} hasta hora ${endHour} (hora actual: ${currentHour})`);
+    
+    // Separar los datos por hora para facilitar el filtrado
+    const hourToDataMap: { [hour: number]: WeatherDataPoint } = {};
+    
+    historicalAverages.forEach(dataPoint => {
       const dataHour = new Date(dataPoint.time).getHours();
-      // Si queremos mostrar desde 1 hora antes de la actual
-      const startHour = currentHour > 0 ? currentHour - 1 : 23; // Si es hora 0, mostrar desde hora 23
-      
-      // En caso de que queramos ver horas después de la medianoche y estamos antes
-      if (currentHour < startHour) { // Esto pasa cuando currentHour=0 y startHour=23
-        return dataHour >= startHour || dataHour <= currentHour + hoursAhead;
-      }
-      
-      // Caso normal: mostrar horas desde startHour hasta currentHour + hoursAhead
-      return dataHour >= startHour && dataHour <= currentHour + hoursAhead;
+      hourToDataMap[dataHour] = dataPoint;
     });
     
-    console.log(`Hora actual: ${currentHour}. Mostrando datos desde hace 1 hora hasta ${hoursAhead} horas adelante`);
-    console.log(`Datos completos: ${historicalAverages.length}, Datos filtrados: ${filteredAverages.length}`);
+    // Construir el arreglo de datos filtrados
+    const filteredData: WeatherDataPoint[] = [];
     
-    // Si después de filtrar no quedan suficientes datos, usar al menos las horas solicitadas desde el principio
-    if (filteredAverages.length < hoursAhead) {
-      console.log('No hay suficientes datos después de filtrar, usando los primeros datos disponibles');
-      return historicalAverages.slice(0, hoursAhead);
+    // Agregar la hora anterior a la actual
+    if (hourToDataMap[startHour]) {
+      filteredData.push(hourToDataMap[startHour]);
     }
     
-    // Devolver solo la cantidad de horas solicitadas, desde el inicio de los datos filtrados
-    return filteredAverages.slice(0, hoursAhead);
+    // Agregar la hora actual y las horas siguientes
+    for (let h = 0; h <= hoursAhead; h++) {
+      const hourToAdd = (currentHour + h) % 24;
+      if (hourToDataMap[hourToAdd]) {
+        filteredData.push(hourToDataMap[hourToAdd]);
+      }
+    }
+    
+    console.log(`Hora actual: ${currentHour}. Mostrando datos desde hace 1 hora hasta ${hoursAhead} horas adelante`);
+    console.log(`Datos completos: ${historicalAverages.length}, Datos filtrados: ${filteredData.length}`);
+    
+    // Verificar si tenemos suficientes datos (debería ser hoursAhead + 1 para incluir la hora actual)
+    if (filteredData.length < hoursAhead + 1) {
+      console.log('No hay suficientes datos después de filtrar, usando los primeros datos disponibles');
+      return historicalAverages.slice(0, hoursAhead + 2); // +2 para incluir la hora actual y una hora antes
+    }
+    
+    // Devolver los datos filtrados
+    return filteredData;
   } catch (error) {
     console.error('Error fetching projection data:', error);
     throw error;

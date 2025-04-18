@@ -5,7 +5,6 @@ import useSWR from 'swr';
 import { fetcher } from '@/lib/fetcher';
 import { getForecastData, getProjectionData, WeatherDataPoint } from '@/lib/openMeteoClient';
 import LocationSearch from '@/components/LocationSearch';
-import ProjectionHoursSelector from '@/components/ProjectionHoursSelector';
 import WeatherChart from '@/components/WeatherChart';
 import SummaryCard from '@/components/SummaryCard';
 import ThemeToggle from '@/components/ThemeToggle';
@@ -24,7 +23,8 @@ interface Coordinates {
 
 export default function Home() {
   const [coords, setCoords] = useState<Coordinates>({ lat: null, lon: null });
-  const [hoursAhead, setHoursAhead] = useState<number>(6); // Default to 6 hours
+  // Valor fijo: siempre mostrar 12 horas hacia adelante desde 1 hora antes de la actual
+  const hoursAhead = 12;
   
   // Estados para los datos del clima y estados de carga
   const [projectionData, setProjectionData] = useState<WeatherDataPoint[] | null>(null);
@@ -41,57 +41,85 @@ export default function Home() {
     setForecastError(null);
   };
 
-  // Función para cargar datos de proyección
-  const loadProjectionData = useCallback(async () => {
-    if (!coords.lat || !coords.lon) return;
-    
-    setIsProjectionLoading(true);
-    setProjectionError(null);
-    
-    try {
-      const data = await getProjectionData(
-        { latitude: coords.lat, longitude: coords.lon }, 
-        hoursAhead
-      );
-      setProjectionData(data);
-    } catch (error) {
-      console.error('Error loading projection data:', error);
-      setProjectionError(error instanceof Error ? error : new Error('Failed to load projection data'));
-    } finally {
-      setIsProjectionLoading(false);
-    }
-  }, [coords, hoursAhead]);
-
-  // Función para cargar datos de pronóstico
-  const loadForecastData = useCallback(async () => {
-    if (!coords.lat || !coords.lon) return;
-    
-    setIsForecastLoading(true);
-    setForecastError(null);
-    
-    try {
-      const data = await getForecastData({ latitude: coords.lat, longitude: coords.lon });
-      setForecastData(data);
-    } catch (error) {
-      console.error('Error loading forecast data:', error);
-      setForecastError(error instanceof Error ? error : new Error('Failed to load forecast data'));
-    } finally {
-      setIsForecastLoading(false);
+  // Cargar datos cuando cambien las coordenadas
+  React.useEffect(() => {
+    if (coords.lat && coords.lon) {
+      // Función para cargar todos los datos a la vez
+      const loadAllData = async () => {
+        setIsProjectionLoading(true);
+        setIsForecastLoading(true);
+        setProjectionError(null);
+        setForecastError(null);
+        
+        try {
+          // Usar Promise.all para realizar ambas peticiones en paralelo
+          const [projectionResult, forecastResult] = await Promise.all([
+            getProjectionData(
+              { latitude: coords.lat, longitude: coords.lon }, 
+              hoursAhead
+            ).catch(error => {
+              console.error('Error loading projection data:', error);
+              setProjectionError(error instanceof Error ? error : new Error('Failed to load projection data'));
+              return null;
+            }),
+            
+            getForecastData(
+              { latitude: coords.lat, longitude: coords.lon }
+            ).catch(error => {
+              console.error('Error loading forecast data:', error);
+              setForecastError(error instanceof Error ? error : new Error('Failed to load forecast data'));
+              return null;
+            })
+          ]);
+          
+          // Actualizar los estados con los resultados
+          if (projectionResult) setProjectionData(projectionResult);
+          if (forecastResult) setForecastData(forecastResult);
+          
+        } finally {
+          setIsProjectionLoading(false);
+          setIsForecastLoading(false);
+        }
+      };
+      
+      loadAllData();
     }
   }, [coords]);
 
-  // Cargar datos cuando cambien las coordenadas o las horas
-  React.useEffect(() => {
-    if (coords.lat && coords.lon) {
-      loadProjectionData();
-      loadForecastData();
-    }
-  }, [coords, hoursAhead, loadProjectionData, loadForecastData]);
-
-  // Manejar cambio en horas de proyección
-  const handleHoursChange = (newHours: number) => {
-    setHoursAhead(newHours);
-  };
+  // Función para recargar todos los datos
+  const reloadData = useCallback(() => {
+    if (!coords.lat || !coords.lon) return;
+    
+    setIsProjectionLoading(true);
+    setIsForecastLoading(true);
+    setProjectionError(null);
+    setForecastError(null);
+    
+    Promise.all([
+      getProjectionData(
+        { latitude: coords.lat, longitude: coords.lon }, 
+        hoursAhead
+      ).catch(error => {
+        console.error('Error loading projection data:', error);
+        setProjectionError(error instanceof Error ? error : new Error('Error al cargar datos de proyección'));
+        return null;
+      }),
+      
+      getForecastData(
+        { latitude: coords.lat, longitude: coords.lon }
+      ).catch(error => {
+        console.error('Error loading forecast data:', error);
+        setForecastError(error instanceof Error ? error : new Error('Error al cargar datos de pronóstico'));
+        return null;
+      })
+    ]).then(([projectionResult, forecastResult]) => {
+      if (projectionResult) setProjectionData(projectionResult);
+      if (forecastResult) setForecastData(forecastResult);
+    }).finally(() => {
+      setIsProjectionLoading(false);
+      setIsForecastLoading(false);
+    });
+  }, [coords]); // Eliminado hoursAhead de las dependencias
 
   // Combinar estados de carga
   const isLoading = isProjectionLoading || isForecastLoading;
@@ -99,23 +127,22 @@ export default function Home() {
   return (
     <main className="flex min-h-screen flex-col items-center p-6 md:p-12 lg:p-24 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 transition-colors duration-300">
       <header className="w-full max-w-5xl flex justify-between items-center mb-8">
-        <h1 className="text-2xl md:text-3xl font-bold">Que me pongo?</h1>
+        <h1 className="text-2xl md:text-3xl font-bold">¿Qué me pongo?</h1>
         <ThemeToggle />
       </header>
 
       <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <LocationSearch onLocationSelect={handleLocationSelect} />
-        <ProjectionHoursSelector selectedHours={hoursAhead} onHoursChange={handleHoursChange} />
       </div>
 
       <div className="w-full max-w-5xl">
-        {isLoading && <p className="text-center">Loading weather data...</p>}
+        {isLoading && <p className="text-center">Cargando datos meteorológicos...</p>}
         
         {projectionError && (
           <AlertBanner 
             type="error"
             message={`Error al cargar datos de proyección: ${projectionError.message}`}
-            onRetry={loadProjectionData}
+            onRetry={reloadData}
             onDismiss={() => setProjectionError(null)}
           />
         )}
@@ -124,7 +151,7 @@ export default function Home() {
           <AlertBanner 
             type="error"
             message={`Error al cargar datos de pronóstico: ${forecastError.message}`}
-            onRetry={loadForecastData}
+            onRetry={reloadData}
             onDismiss={() => setForecastError(null)}
           />
         )}
@@ -136,21 +163,21 @@ export default function Home() {
                      forecastData={forecastData}
                      projectionData={projectionData}
                      variable="temperature_2m"
-                     label="Temperature"
+                     label="Temperatura"
                      hoursAhead={hoursAhead}
                    />
                  )}
                  
                  {projectionData && (
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                     <SummaryCard projectionData={projectionData} hoursToShow={hoursAhead <= 6 ? hoursAhead : 6} />
+                     <SummaryCard projectionData={projectionData} hoursToShow={hoursAhead} />
                      <WeatherRecommendations data={projectionData} />
                    </div>
                  )}
             </div>
         )}
 
-        {!coords.lat && <p className="text-center text-neutral-500 dark:text-neutral-400">Please search for a location to see the weather projection.</p>}
+        {!coords.lat && <p className="text-center text-neutral-500 dark:text-neutral-400">Busca una ubicación para ver la proyección del tiempo.</p>}
       </div>
     </main>
   );

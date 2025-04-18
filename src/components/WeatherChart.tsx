@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -16,6 +16,7 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import 'chartjs-adapter-date-fns';
+import { es } from 'date-fns/locale';
 
 // Register Chart.js components
 ChartJS.register(
@@ -46,80 +47,69 @@ interface WeatherChartProps {
   hoursAhead: number;
 }
 
-// Helper to get variable unit
-const getUnit = (variable: string): string => {
-  switch (variable) {
-    case 'temperature_2m': return '°C';
-    case 'relative_humidity_2m': return '%';
-    case 'precipitation': return 'mm';
-    case 'wind_speed_10m': return 'km/h';
-    default: return '';
+// Helper: busca el valor más cercano con la misma hora, o exacto si existe
+function findClosestValue(data: WeatherDataPoint[], labelDate: Date, variable: string): number | null {
+  // Exact match (fecha y hora)
+  const exact = data.find(point => {
+    const pt = new Date(point.time);
+    return pt.getFullYear() === labelDate.getFullYear() &&
+           pt.getMonth() === labelDate.getMonth() &&
+           pt.getDate() === labelDate.getDate() &&
+           pt.getHours() === labelDate.getHours();
+  });
+  if (exact && exact[variable] !== undefined && exact[variable] !== null) {
+    return Number(exact[variable]);
   }
-};
+  // Si no hay coincidencia exacta, buscar el valor con la misma hora y fecha más cercana
+  const candidates = data.filter(point => new Date(point.time).getHours() === labelDate.getHours());
+  if (candidates.length === 0) return null;
+  let minDiff = Infinity;
+  let closest: WeatherDataPoint | null = null;
+  candidates.forEach(point => {
+    const diff = Math.abs(new Date(point.time).getTime() - labelDate.getTime());
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = point;
+    }
+  });
+  return closest && closest[variable] !== undefined && closest[variable] !== null
+    ? Number(closest[variable])
+    : null;
+}
 
 export default function WeatherChart({ forecastData, projectionData, variable, label, hoursAhead }: WeatherChartProps) {
-  
-  // Referencia al chart para acceder a sus métodos
-  const chartRef = useRef<ChartJS<"line">>(null);
-  
-  // --- Debug logging ---
-  console.log('WeatherChart rendering with:');
-  console.log(`Projection data (${projectionData.length} items)`);
-  console.log(`Forecast data (${forecastData.length} items)`);
-  
-  // Create arrays for projection values
-  const projectionValues: (number | null)[] = [];
-  const projectionTimes: string[] = [];
-  
-  projectionData.forEach(item => {
-    projectionTimes.push(item.time);
-    const value = item[variable];
-    projectionValues.push(value !== undefined && value !== null ? Number(value) : null);
-  });
-  
-  // Find forecast values that correspond to the same hours as projection values
-  const forecastValues: (number | null)[] = Array(projectionTimes.length).fill(null);
-  
-  // Extract hour from time string
-  const getHour = (timeString: string): number => {
-    return new Date(timeString).getHours();
-  };
-  
-  // Map of hours in projection data
-  const projectionHours = projectionTimes.map(getHour);
-  
-  // Fill in forecast values that match projection hours
-  forecastData.forEach(item => {
-    const hour = getHour(item.time);
-    const index = projectionHours.indexOf(hour);
-    
-    if (index !== -1) {
-      const value = item[variable];
-      forecastValues[index] = value !== undefined && value !== null ? Number(value) : null;
-    }
-  });
-  
-  // If we don't have any forecast values, use a simpler approach: just take the first N values
-  const hasForecastValues = forecastValues.some(v => v !== null);
-  
-  if (!hasForecastValues && forecastData.length > 0) {
-    console.log('No matching forecast hours found. Using sequential values.');
-    for (let i = 0; i < Math.min(forecastData.length, projectionTimes.length); i++) {
-      const value = forecastData[i][variable];
-      forecastValues[i] = value !== undefined && value !== null ? Number(value) : null;
-    }
+  const chartRef = useRef<ChartJS<'line'>>(null);
+
+  // Etiquetas del eje X: desde 1h antes hasta hoursAhead después
+  const now = new Date();
+  const currentHour = now.getHours();
+  const hourLabels: Date[] = [];
+  for (let i = -1; i <= hoursAhead; i++) {
+    const date = new Date(now);
+    date.setHours(currentHour + i, 0, 0, 0);
+    hourLabels.push(date);
   }
-  
-  console.log('Projection values:', projectionValues);
-  console.log('Forecast values:', forecastValues);
-  
+
+  // Mapeo de datos
+  const adjustedForecastValues = hourLabels.map(labelDate =>
+    findClosestValue(forecastData, labelDate, variable)
+  );
+  const adjustedProjectionValues = hourLabels.map(labelDate => {
+    const hour = labelDate.getHours();
+    const found = projectionData.find(point => new Date(point.time).getHours() === hour);
+    return found && found[variable] !== undefined && found[variable] !== null
+      ? Number(found[variable])
+      : null;
+  });
+
+  // Chart.js config
   const chartData: ChartData<'line'> = {
-    labels: projectionTimes,
+    labels: hourLabels,
     datasets: [
       {
-        label: `Forecast (${label})`,
-        data: forecastValues,
-        borderColor: 'rgb(59, 130, 246)', // Blue
+        label: `Pronóstico (${label})`,
+        data: adjustedForecastValues,
+        borderColor: 'rgb(59, 130, 246)',
         backgroundColor: 'rgba(59, 130, 246, 0.5)',
         tension: 0.1,
         pointRadius: 4,
@@ -127,9 +117,9 @@ export default function WeatherChart({ forecastData, projectionData, variable, l
         pointBackgroundColor: 'rgb(59, 130, 246)',
       },
       {
-        label: `Projection (${label})`,
-        data: projectionValues,
-        borderColor: 'rgb(239, 68, 68)', // Red
+        label: `Proyección (${label})`,
+        data: adjustedProjectionValues,
+        borderColor: 'rgb(239, 68, 68)',
         backgroundColor: 'rgba(239, 68, 68, 0.5)',
         tension: 0.1,
         pointRadius: 4,
@@ -139,90 +129,49 @@ export default function WeatherChart({ forecastData, projectionData, variable, l
     ],
   };
 
+  const unitMap: {[key: string]: string} = {
+    temperature_2m: '°C',
+    relative_humidity_2m: '%',
+    precipitation: 'mm',
+    wind_speed_10m: 'km/h'
+  };
+
   const options: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: {
-        position: 'top' as const,
-        labels: {
-          usePointStyle: true,
-          padding: 15,
-          font: { size: 12 }
-        }
+        position: 'top',
+        labels: { usePointStyle: true, boxWidth: 10 },
       },
-      title: {
-        display: true,
-        text: `${label} - Forecast vs. Projection`,
-        font: {
-          size: 16,
-          weight: 'bold'
-        },
-        padding: {
-          top: 10,
-          bottom: 20
-        }
-      },
-      tooltip: {
-        mode: 'index',
-        intersect: false,
-        callbacks: {
-          label: function(context) {
-            let label = context.dataset.label || '';
-            if (label) {
-              label += ': ';
-            }
-            if (context.parsed.y !== null) {
-              label += `${context.parsed.y} ${getUnit(variable)}`;
-            }
-            return label;
-          }
-        }
-      },
+      tooltip: { mode: 'index', intersect: false },
     },
     scales: {
       x: {
         type: 'time',
         time: {
           unit: 'hour',
-          tooltipFormat: 'PPpp',
-          displayFormats: {
-            hour: 'HH:mm'
-          },
-          parser: 'yyyy-MM-dd\'T\'HH:mm'
+          displayFormats: { hour: 'HH:00' },
+          tooltipFormat: 'dd/MM/yyyy HH:00',
         },
-        title: {
-          display: true,
-          text: 'Hora del día',
-          font: { weight: 'bold' }
-        },
-        grid: {
-          display: true,
-          color: 'rgba(200, 200, 200, 0.2)'
-        },
+        title: { display: true, text: 'Hora' },
+        min: hourLabels[0].toISOString(),
+        max: hourLabels[hourLabels.length - 1].toISOString(),
         ticks: {
-          source: 'auto',
-          maxRotation: 0,
-          autoSkip: false
-        }
+          autoSkip: true,
+          maxTicksLimit: 12,
+          callback: value => {
+            const date = new Date(value as string);
+            return date.getHours() + ':00';
+          }
+        },
+        adapters: { date: { locale: es } },
+        bounds: 'ticks'
       },
       y: {
-        title: {
-          display: true,
-          text: `${label} (${getUnit(variable)})`,
-          font: { weight: 'bold' }
-        },
-        beginAtZero: variable === 'precipitation',
-        grid: {
-          display: true,
-          color: 'rgba(200, 200, 200, 0.2)'
-        }
+        beginAtZero: variable !== 'temperature_2m',
+        title: { display: true, text: unitMap[variable] || '' },
       },
-    },
-    interaction: {
-      mode: 'nearest',
-      axis: 'x',
-      intersect: false,
     },
   };
 
@@ -232,7 +181,7 @@ export default function WeatherChart({ forecastData, projectionData, variable, l
         ref={chartRef}
         options={options}
         data={chartData}
-        aria-label={`${label} chart comparing forecast and projection`}
+        aria-label={`Gráfico de ${label} comparando pronóstico y proyección`}
         role="img"
       />
     </div>
