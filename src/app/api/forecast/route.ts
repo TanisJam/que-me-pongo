@@ -1,0 +1,174 @@
+import { NextRequest, NextResponse } from 'next/server';
+import axios, { AxiosResponse, AxiosError } from 'axios';
+import http from 'http';
+import https from 'https';
+
+// Configuración de agentes HTTP para conexiones persistentes
+const httpAgent = new http.Agent({ keepAlive: true });
+const httpsAgent = new https.Agent({ keepAlive: true });
+
+// Define the variables we want from the forecast API
+const FORECAST_HOURLY_VARIABLES = [
+    'temperature_2m',
+    'relative_humidity_2m',
+    'precipitation',
+    'wind_speed_10m',
+];
+
+// Define the structure for the data points we'll return
+// Consistent with the projection API's WeatherDataPoint
+interface WeatherDataPoint {
+  time: string;
+  // Make specific properties optional and allow null
+  temperature_2m?: number | null;
+  relative_humidity_2m?: number | null;
+  precipitation?: number | null;
+  wind_speed_10m?: number | null;
+  // Adjust index signature to allow undefined, matching optional properties
+  [key: string]: number | string | null | undefined;
+}
+
+// --- Retry Logic (Copied from projection route) --- 
+
+// Helper function to introduce delay
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Retry configuration - Aumentamos tiempo de timeout y número de reintentos
+const MAX_RETRIES = 5; // Incrementado de 3 a 5
+const INITIAL_DELAY_MS = 500; // Incrementado de 300 a 500
+const REQUEST_TIMEOUT_MS = 30000; // Incrementado de 10 a 30 segundos, igual que en projection
+
+/**
+ * Fetches data from a URL with retry logic using exponential backoff.
+ * Only retries on network errors, timeouts, or 5xx server errors.
+ */
+async function fetchWithRetry(url: string, params: any, attempt = 1): Promise<AxiosResponse<any>> {
+  try {
+    console.log(`[API Forecast] Attempt ${attempt}/${MAX_RETRIES} fetching from ${url}`);
+    
+    // Opción 1: Usar el agente HTTPS directamente sin otras opciones
+    const response = await axios.get(url, {
+      params,
+      timeout: REQUEST_TIMEOUT_MS,
+      httpsAgent: new https.Agent({ keepAlive: true, timeout: REQUEST_TIMEOUT_MS })
+    });
+    
+    console.log(`[API Forecast] Successful response received on attempt ${attempt}`);
+    return response;
+  } catch (error: unknown) {
+    console.log(`[API Forecast] Error caught on attempt ${attempt}:`, error);
+    // Mejoramos la verificación para incluir cualquier error de red/timeout
+    if (axios.isAxiosError(error) && (
+        error.code === 'ECONNABORTED' || // Timeout error
+        error.code === 'ETIMEDOUT' ||    // Explicitly check for ETIMEDOUT
+        error.code === 'ECONNREFUSED' || // Connection refused
+        error.code === 'ENOTFOUND' ||    // DNS lookup failed
+        !error.response ||               // Any network error (no response received)
+        error.response.status >= 500     // Server error (5xx)
+    )) {
+        if (attempt <= MAX_RETRIES) {
+            const delayMs = INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
+            console.warn(`[API Forecast] Request failed (attempt ${attempt}/${MAX_RETRIES}) to ${url}. Retrying in ${delayMs}ms... Error code: ${error.code}, Message: ${error.message}`);
+            await delay(delayMs);
+            return fetchWithRetry(url, params, attempt + 1);
+        } else {
+            console.error(`[API Forecast] Request failed after ${MAX_RETRIES} attempts to ${url}. Error code: ${error.code}, Message: ${error.message}`);
+            throw error;
+        }
+    }
+    // Handle non-Axios or non-retriable errors
+    let errorMessage = 'Unknown error';
+    if (error instanceof Error) {
+        errorMessage = error.message;
+    }
+    console.error(`[API Forecast] Request failed to ${url}, not retrying. Error: ${errorMessage}`);
+    throw error;
+  }
+}
+
+// --- End Retry Logic --- 
+
+export async function GET(request: NextRequest) {
+    const { searchParams } = new URL(request.url);
+    const latitude = searchParams.get('latitude');
+    const longitude = searchParams.get('longitude');
+
+    if (!latitude || !longitude) {
+        return NextResponse.json({ error: 'Missing required query parameters: latitude, longitude' }, { status: 400 });
+    }
+
+    // Forecast API endpoint
+    const apiUrl = 'https://api.open-meteo.com/v1/forecast';
+
+    // Prepare params for the API call - Actualizado según el formato sugerido
+    const apiParams = {
+        latitude,
+        longitude,
+        hourly: FORECAST_HOURLY_VARIABLES.join(','),
+        // Usar America/Argentina/Buenos_Aires para Argentina (cerca de Rosario)
+        timezone: 'America/Argentina/Buenos_Aires',
+        // Usar forecast_days=1 en lugar de forecast_hours=24
+        forecast_days: 1
+        // forecast_hours: 24, // Comentado
+    };
+
+    try {
+        // Use fetchWithRetry instead of direct axios.get
+        let response;
+        try {
+            response = await fetchWithRetry(apiUrl, apiParams);
+        } catch (retryError) {
+            console.error('[API Forecast] All retry attempts failed, trying fallback option');
+            
+            // Fallback: Return an error with instruction to retry
+            // In a more sophisticated implementation, you could:
+            // 1. Cache previous successful responses and return them
+            // 2. Use data from projection API as an approximation
+            // 3. Use another weather API as backup
+            
+            return NextResponse.json(
+                { error: 'Failed to fetch forecast data after multiple attempts. The weather service might be experiencing high load. Please try again later.' }, 
+                { status: 503 } // Service Unavailable
+            );
+        }
+
+        // Transform the response to match WeatherDataPoint[] structure
+        const hourlyData = response.data.hourly;
+        if (!hourlyData || !hourlyData.time || hourlyData.time.length === 0) {
+             console.error('[API Forecast] No hourly forecast data received from Open-Meteo');
+             return NextResponse.json({ error: 'No hourly forecast data received' }, { status: 502 }); // Bad Gateway likely from API
+        }
+
+        const formattedData: WeatherDataPoint[] = hourlyData.time.map((t: string, index: number) => {
+            // Initialize with time, other properties will be added
+            const dataPoint: WeatherDataPoint = { time: t };
+            FORECAST_HOURLY_VARIABLES.forEach(variable => {
+                // Ensure null is used if data is missing/null/undefined
+                // Access safely using ?. and provide null fallback
+                dataPoint[variable] = hourlyData[variable]?.[index] ?? null;
+            });
+            return dataPoint;
+        });
+
+        return NextResponse.json(formattedData);
+
+    } catch (error) {
+        console.error('[API Forecast] Error fetching data:', error);
+        if (axios.isAxiosError(error)) {
+             // Log specific details for Axios errors
+            console.error('[API Forecast] Axios error details:', {
+                message: error.message,
+                code: error.code,
+                status: error.response?.status,
+                configUrl: error.config?.url, // Log the URL requested
+                configParams: error.config?.params, // Log params
+            });
+            return NextResponse.json(
+                { error: 'Failed to fetch forecast data from Open-Meteo', details: error.message },
+                { status: error.response?.status || 500 } // Use status from error response if available
+            );
+        }
+        // Generic internal server error
+        return NextResponse.json({ error: 'Internal Server Error processing forecast request' }, { status: 500 });
+    }
+} 

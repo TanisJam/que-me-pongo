@@ -1,103 +1,152 @@
-import Image from "next/image";
+'use client';
+
+import React, { useState, useMemo, useCallback } from 'react';
+import useSWR from 'swr';
+import { fetcher } from '@/lib/fetcher';
+import { getForecastData, getProjectionData, WeatherDataPoint } from '@/lib/openMeteoClient';
+import LocationSearch from '@/components/LocationSearch';
+import ProjectionHoursSelector from '@/components/ProjectionHoursSelector';
+import WeatherChart from '@/components/WeatherChart';
+import SummaryCard from '@/components/SummaryCard';
+import ThemeToggle from '@/components/ThemeToggle';
+import AlertBanner from '@/components/AlertBanner';
+
+// Helper function to format date as YYYY-MM-DD
+function formatDate(date: Date): string {
+    return date.toISOString().split('T')[0];
+}
+
+interface Coordinates {
+  lat: number | null;
+  lon: number | null;
+}
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [coords, setCoords] = useState<Coordinates>({ lat: null, lon: null });
+  const [hoursAhead, setHoursAhead] = useState<number>(6); // Default to 6 hours
+  
+  // Estados para los datos del clima y estados de carga
+  const [projectionData, setProjectionData] = useState<WeatherDataPoint[] | null>(null);
+  const [forecastData, setForecastData] = useState<WeatherDataPoint[] | null>(null);
+  const [isProjectionLoading, setIsProjectionLoading] = useState<boolean>(false);
+  const [isForecastLoading, setIsForecastLoading] = useState<boolean>(false);
+  const [projectionError, setProjectionError] = useState<Error | null>(null);
+  const [forecastError, setForecastError] = useState<Error | null>(null);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
+  const handleLocationSelect = (selectedCoords: { lat: number; lon: number }) => {
+    setCoords(selectedCoords);
+    // Reset errors cuando cambia la ubicación
+    setProjectionError(null);
+    setForecastError(null);
+  };
+
+  // Función para cargar datos de proyección
+  const loadProjectionData = useCallback(async () => {
+    if (!coords.lat || !coords.lon) return;
+    
+    setIsProjectionLoading(true);
+    setProjectionError(null);
+    
+    try {
+      const data = await getProjectionData(
+        { latitude: coords.lat, longitude: coords.lon }, 
+        hoursAhead
+      );
+      setProjectionData(data);
+    } catch (error) {
+      console.error('Error loading projection data:', error);
+      setProjectionError(error instanceof Error ? error : new Error('Failed to load projection data'));
+    } finally {
+      setIsProjectionLoading(false);
+    }
+  }, [coords, hoursAhead]);
+
+  // Función para cargar datos de pronóstico
+  const loadForecastData = useCallback(async () => {
+    if (!coords.lat || !coords.lon) return;
+    
+    setIsForecastLoading(true);
+    setForecastError(null);
+    
+    try {
+      const data = await getForecastData({ latitude: coords.lat, longitude: coords.lon });
+      setForecastData(data);
+    } catch (error) {
+      console.error('Error loading forecast data:', error);
+      setForecastError(error instanceof Error ? error : new Error('Failed to load forecast data'));
+    } finally {
+      setIsForecastLoading(false);
+    }
+  }, [coords]);
+
+  // Cargar datos cuando cambien las coordenadas o las horas
+  React.useEffect(() => {
+    if (coords.lat && coords.lon) {
+      loadProjectionData();
+      loadForecastData();
+    }
+  }, [coords, hoursAhead, loadProjectionData, loadForecastData]);
+
+  // Manejar cambio en horas de proyección
+  const handleHoursChange = (newHours: number) => {
+    setHoursAhead(newHours);
+  };
+
+  // Combinar estados de carga
+  const isLoading = isProjectionLoading || isForecastLoading;
+
+  return (
+    <main className="flex min-h-screen flex-col items-center p-6 md:p-12 lg:p-24 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 transition-colors duration-300">
+      <header className="w-full max-w-5xl flex justify-between items-center mb-8">
+        <h1 className="text-2xl md:text-3xl font-bold">Que me pongo?</h1>
+        <ThemeToggle />
+      </header>
+
+      <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <LocationSearch onLocationSelect={handleLocationSelect} />
+        <ProjectionHoursSelector selectedHours={hoursAhead} onHoursChange={handleHoursChange} />
+      </div>
+
+      <div className="w-full max-w-5xl">
+        {isLoading && <p className="text-center">Loading weather data...</p>}
+        
+        {projectionError && (
+          <AlertBanner 
+            type="error"
+            message={`Error al cargar datos de proyección: ${projectionError.message}`}
+            onRetry={loadProjectionData}
+            onDismiss={() => setProjectionError(null)}
           />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
+        )}
+        
+        {forecastError && (
+          <AlertBanner 
+            type="error"
+            message={`Error al cargar datos de pronóstico: ${forecastError.message}`}
+            onRetry={loadForecastData}
+            onDismiss={() => setForecastError(null)}
           />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+        )}
+
+        {coords.lat && !isLoading && !projectionError && !forecastError && (
+            <div className="space-y-8">
+                {projectionData && forecastData && (
+                   <WeatherChart
+                     forecastData={forecastData}
+                     projectionData={projectionData}
+                     variable="temperature_2m"
+                     label="Temperature"
+                     hoursAhead={hoursAhead}
+                   />
+                 )}
+                 {projectionData && (
+                   <SummaryCard projectionData={projectionData} hoursToShow={hoursAhead <= 6 ? hoursAhead : 6} />
+                 )}
+            </div>
+        )}
+
+        {!coords.lat && <p className="text-center text-neutral-500 dark:text-neutral-400">Please search for a location to see the weather projection.</p>}
+      </div>
+    </main>
   );
 }

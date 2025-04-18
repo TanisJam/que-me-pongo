@@ -1,0 +1,202 @@
+import { NextRequest, NextResponse } from 'next/server';
+import axios, { AxiosResponse, AxiosError } from 'axios';
+import http from 'http';
+import https from 'https';
+
+// Configuración de agentes HTTP para conexiones persistentes
+const httpAgent = new http.Agent({ keepAlive: true });
+const httpsAgent = new https.Agent({ keepAlive: true });
+
+const NUM_YEARS_HISTORY = 5; // Reducido de 10 a 5 para disminuir la carga en la API
+const HOURLY_VARIABLES = [
+  'temperature_2m',
+  'relative_humidity_2m',
+  'precipitation',
+  'wind_speed_10m',
+];
+
+interface HourlyAverage {
+  time: string; // ISO 8601 format
+  [key: string]: number | string | null; // Allow null for variables
+}
+
+// Helper function to format date as YYYY-MM-DD
+function formatDate(date: Date): string {
+  return date.toISOString().split('T')[0];
+}
+
+// Helper function to calculate averages
+function calculateAverages(allHourlyData: any[]): HourlyAverage[] {
+  if (!allHourlyData.length || !allHourlyData[0]?.hourly?.time) {
+    return [];
+  }
+
+  const referenceYearData = allHourlyData[0].hourly;
+  const numTimeSteps = referenceYearData.time.length;
+  const averages: HourlyAverage[] = [];
+
+  for (let i = 0; i < numTimeSteps; i++) {
+    const time = referenceYearData.time[i];
+    const avgData: HourlyAverage = { time };
+
+    HOURLY_VARIABLES.forEach(variable => {
+      let sum = 0;
+      let count = 0;
+      allHourlyData.forEach(yearData => {
+        if (yearData?.hourly?.[variable]?.[i] !== null && yearData?.hourly?.[variable]?.[i] !== undefined) {
+          sum += yearData.hourly[variable][i];
+          count++;
+        }
+      });
+      // Store average or null if no data points
+      avgData[variable] = count > 0 ? parseFloat((sum / count).toFixed(2)) : null;
+    });
+    averages.push(avgData);
+  }
+  return averages;
+}
+
+// Helper function to introduce delay
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Retry configuration
+const MAX_RETRIES = 5;
+const INITIAL_DELAY_MS = 500;
+const REQUEST_TIMEOUT_MS = 30000;
+
+/**
+ * Fetches data from a URL with retry logic using exponential backoff.
+ * Only retries on network errors, timeouts, or 5xx server errors.
+ */
+async function fetchWithRetry(url: string, params: any, attempt = 1): Promise<AxiosResponse<any>> {
+  try {
+    console.log(`[API Projection] Attempt ${attempt}/${MAX_RETRIES} fetching from ${url}`);
+    
+    // Simplificado: Usar solo el timeout global de axios
+    const response = await axios.get(url, { 
+      params, 
+      timeout: REQUEST_TIMEOUT_MS
+    });
+    
+    console.log(`[API Projection] Successful response received on attempt ${attempt}`);
+    return response;
+  } catch (error: unknown) {
+    console.log(`[API Projection] Error caught on attempt ${attempt}:`, error);
+    if (axios.isAxiosError(error) && (
+        error.code === 'ECONNABORTED' ||
+        error.code === 'ETIMEDOUT' ||
+        error.code === 'ECONNREFUSED' ||
+        error.code === 'ENOTFOUND' ||
+        !error.response ||
+        error.response.status >= 500
+    )) {
+        if (attempt <= MAX_RETRIES) {
+            const delayMs = INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
+            console.warn(`[API Projection] Request failed (attempt ${attempt}/${MAX_RETRIES}) to ${url}. Retrying in ${delayMs}ms... Error code: ${error.code}, Message: ${error.message}`);
+            await delay(delayMs);
+            return fetchWithRetry(url, params, attempt + 1);
+        } else {
+            console.error(`[API Projection] Request failed after ${MAX_RETRIES} attempts to ${url}. Error code: ${error.code}, Message: ${error.message}`);
+            throw error;
+        }
+    }
+    let errorMessage = 'Unknown error';
+    if (error instanceof Error) {
+        errorMessage = error.message;
+    }
+    console.error(`[API Projection] Request failed to ${url}, not retrying. Error: ${errorMessage}`);
+    throw error;
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const latitude = searchParams.get('latitude');
+  const longitude = searchParams.get('longitude');
+  const hoursAheadParam = searchParams.get('hoursAhead'); // e.g., 6, 12, 24
+
+  if (!latitude || !longitude || !hoursAheadParam) {
+    return NextResponse.json({ error: 'Missing latitude, longitude, or hoursAhead' }, { status: 400 });
+  }
+
+  const hoursAhead = parseInt(hoursAheadParam, 10);
+  if (isNaN(hoursAhead) || hoursAhead <= 0) {
+    return NextResponse.json({ error: 'Invalid hoursAhead parameter' }, { status: 400 });
+  }
+
+  const today = new Date();
+  const currentHour = today.getHours();
+  const targetDate = formatDate(today); // Format as YYYY-MM-DD
+
+  // En lugar de realizar solicitudes en paralelo, las haremos secuencialmente
+  const allHourlyData = [];
+  const currentYear = today.getUTCFullYear();
+  const apiUrl = 'https://archive-api.open-meteo.com/v1/archive';
+
+  try {
+    // Intentamos obtener datos para cada año secuencialmente
+    for (let i = 0; i < NUM_YEARS_HISTORY; i++) {
+      const year = currentYear - 1 - i;
+      const dateForYear = `${year}-${targetDate.substring(5)}`; // Keep MM-DD, change year
+
+      const params = {
+        latitude,
+        longitude,
+        start_date: dateForYear,
+        end_date: dateForYear,
+        hourly: HOURLY_VARIABLES.join(','),
+        timezone: 'America/Argentina/Buenos_Aires',
+      };
+
+      try {
+        // Intentamos obtener datos para este año específico
+        const response = await fetchWithRetry(apiUrl, params);
+        console.log(`[API Projection] Successfully retrieved data for year ${year}`);
+        allHourlyData.push(response.data);
+      } catch (yearError) {
+        // Si falla una solicitud individual, registramos el error pero continuamos con los demás años
+        console.warn(`[API Projection] Failed to retrieve data for year ${year}:`, yearError);
+        // No interrumpimos el bucle, seguimos con el siguiente año
+      }
+    }
+
+    // Verificamos si obtuvimos algún dato
+    if (allHourlyData.length === 0) {
+      console.error('[API Projection] Failed to retrieve data for any year');
+      return NextResponse.json(
+        { error: 'Failed to fetch any historical data for projection' }, 
+        { status: 502 }
+      );
+    }
+
+    // Calculamos los promedios con los datos que tenemos
+    console.log(`[API Projection] Calculating averages using data from ${allHourlyData.length} years`);
+    const historicalAverages = calculateAverages(allHourlyData);
+
+    // Get the first time from the data to determine the start hour
+    let currentHour = 0;
+    if (historicalAverages.length > 0) {
+      const firstTimeStr = historicalAverages[0].time;
+      // Parse the time string to get the hour
+      const timeMatch = /T(\d{2}):/.exec(firstTimeStr);
+      if (timeMatch && timeMatch[1]) {
+        currentHour = parseInt(timeMatch[1], 10);
+      }
+    }
+    
+    // Filter to get exactly the number of hours requested
+    const projection = historicalAverages.slice(0, hoursAhead);
+
+    // Log some info about the projection data
+    console.log(`[API Projection] Returning ${projection.length} hours of data, starting from hour ${currentHour}`);
+    if (projection.length > 0) {
+      console.log(`[API Projection] First time: ${projection[0].time}, Last time: ${projection[projection.length-1].time}`);
+    }
+
+    return NextResponse.json(projection);
+    
+  } catch (error) {
+    console.error('[API Projection] Error processing projection:', error);
+    return NextResponse.json({ error: 'Internal Server Error during projection calculation' }, { status: 500 });
+  }
+} 
