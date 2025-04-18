@@ -94,13 +94,41 @@ export async function getForecastData(coords: Coordinates): Promise<WeatherDataP
       throw new Error('No hourly forecast data received');
     }
 
-    return hourlyData.time.map((t: string, index: number) => {
+    // Convertir todos los datos a nuestro formato
+    const formattedData = hourlyData.time.map((t: string, index: number) => {
       const dataPoint: WeatherDataPoint = { time: t };
       HOURLY_VARIABLES.forEach(variable => {
         dataPoint[variable] = hourlyData[variable]?.[index] ?? null;
       });
       return dataPoint;
     });
+    
+    // Filtrar por hora: mostrar desde una hora antes de la hora actual
+    const currentHour = new Date().getHours();
+    const startHour = currentHour > 0 ? currentHour - 1 : 23; // Si es hora 0, mostrar desde hora 23
+    
+    const filteredData = formattedData.filter((dataPoint: WeatherDataPoint) => {
+      const dataHour = new Date(dataPoint.time).getHours();
+      
+      // En caso de que estemos cerca de la medianoche
+      if (currentHour < startHour) { // Esto pasa cuando currentHour=0 y startHour=23
+        return dataHour >= startHour || dataHour >= 0;
+      }
+      
+      // Caso normal
+      return dataHour >= startHour;
+    });
+    
+    console.log(`Pronóstico: Filtrando desde la hora ${startHour} (hora actual: ${currentHour})`);
+    console.log(`Datos completos: ${formattedData.length}, Datos filtrados: ${filteredData.length}`);
+    
+    // Si no hay suficientes datos después de filtrar, devolver todos
+    if (filteredData.length === 0) {
+      console.log('No hay datos después de filtrar, usando todos los datos disponibles');
+      return formattedData;
+    }
+    
+    return filteredData;
   } catch (error) {
     console.error('Error fetching forecast data:', error);
     throw error;
@@ -119,9 +147,10 @@ export async function getProjectionData(coords: Coordinates, hoursAhead: number)
     const today = new Date();
     const targetDate = formatDate(today);
     const currentYear = today.getUTCFullYear();
+    const currentHour = today.getHours();
     
-    // Reducimos a solo 3 años para minimizar problemas de timeout
-    const NUM_YEARS_HISTORY = 3;
+    // Incrementamos a 10 años para obtener proyecciones más precisas
+    const NUM_YEARS_HISTORY = 10;
     const allHourlyData = [];
 
     // Obtener datos históricos para cada año secuencialmente
@@ -139,7 +168,7 @@ export async function getProjectionData(coords: Coordinates, hoursAhead: number)
             hourly: HOURLY_VARIABLES.join(','),
             timezone: 'America/Argentina/Buenos_Aires',
           },
-          timeout: 10000 // 10 segundos
+          timeout: 30000 // Aumentado a 30 segundos para permitir respuestas más lentas
         });
 
         console.log(`Successfully retrieved data for year ${year}`);
@@ -154,9 +183,35 @@ export async function getProjectionData(coords: Coordinates, hoursAhead: number)
       throw new Error('Failed to fetch any historical data for projection');
     }
 
-    // Calcular promedios y devolver solo las horas solicitadas
+    // Calcular promedios para todas las horas disponibles
     const historicalAverages = calculateAverages(allHourlyData);
-    return historicalAverages.slice(0, hoursAhead);
+    
+    // Filtrar por hora: mostrar desde una hora antes de la hora actual
+    const filteredAverages = historicalAverages.filter(dataPoint => {
+      const dataHour = new Date(dataPoint.time).getHours();
+      // Si queremos mostrar desde 1 hora antes de la actual
+      const startHour = currentHour > 0 ? currentHour - 1 : 23; // Si es hora 0, mostrar desde hora 23
+      
+      // En caso de que queramos ver horas después de la medianoche y estamos antes
+      if (currentHour < startHour) { // Esto pasa cuando currentHour=0 y startHour=23
+        return dataHour >= startHour || dataHour <= currentHour + hoursAhead;
+      }
+      
+      // Caso normal: mostrar horas desde startHour hasta currentHour + hoursAhead
+      return dataHour >= startHour && dataHour <= currentHour + hoursAhead;
+    });
+    
+    console.log(`Hora actual: ${currentHour}. Mostrando datos desde hace 1 hora hasta ${hoursAhead} horas adelante`);
+    console.log(`Datos completos: ${historicalAverages.length}, Datos filtrados: ${filteredAverages.length}`);
+    
+    // Si después de filtrar no quedan suficientes datos, usar al menos las horas solicitadas desde el principio
+    if (filteredAverages.length < hoursAhead) {
+      console.log('No hay suficientes datos después de filtrar, usando los primeros datos disponibles');
+      return historicalAverages.slice(0, hoursAhead);
+    }
+    
+    // Devolver solo la cantidad de horas solicitadas, desde el inicio de los datos filtrados
+    return filteredAverages.slice(0, hoursAhead);
   } catch (error) {
     console.error('Error fetching projection data:', error);
     throw error;
