@@ -47,7 +47,7 @@ export default function SummaryCard({ projectionData, hoursToShow = 12 }: Summar
   return (
     <div className="p-4 bg-white dark:bg-neutral-800 rounded-lg shadow">
       <h3 className="text-lg font-semibold mb-3">Resumen: 1h atrás hasta 12h adelante</h3>
-      <div className="max-h-80 overflow-y-auto pr-2">
+      <div className="overflow-y-auto pr-2">
         <div className="space-y-3">
           {relevantHours.map((hourData, index) => (
             <div key={index} className="flex justify-between items-center text-sm border-b border-neutral-200 dark:border-neutral-700 pb-2 last:border-b-0 last:pb-0">

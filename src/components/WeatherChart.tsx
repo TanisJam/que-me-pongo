@@ -94,6 +94,7 @@ export default function WeatherChart({ forecastData, projectionData, variable, l
   const adjustedForecastValues = hourLabels.map(labelDate =>
     findClosestValue(forecastData, labelDate, variable)
   );
+  
   const adjustedProjectionValues = hourLabels.map(labelDate => {
     const hour = labelDate.getHours();
     const found = projectionData.find(point => new Date(point.time).getHours() === hour);

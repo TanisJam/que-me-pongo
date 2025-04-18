@@ -103,30 +103,35 @@ export async function getForecastData(coords: Coordinates): Promise<WeatherDataP
       return dataPoint;
     });
     
-    // Filtrar por hora: mostrar desde una hora antes de la hora actual
-    const currentHour = new Date().getHours();
-    const startHour = currentHour > 0 ? currentHour - 1 : 23; // Si es hora 0, mostrar desde hora 23
+    // Calculamos el índice y timestamp actual
+    const now = new Date();
+    const currentTimestamp = now.getTime();
     
-    const filteredData = formattedData.filter((dataPoint: WeatherDataPoint) => {
-      const dataHour = new Date(dataPoint.time).getHours();
+    // Encontrar el índice del punto de datos más cercano a la hora actual (un poco antes)
+    let startIndex = -1;
+    for (let i = 0; i < formattedData.length - 1; i++) {
+      const timeA = new Date(formattedData[i].time).getTime();
+      const timeB = new Date(formattedData[i + 1].time).getTime();
       
-      // En caso de que estemos cerca de la medianoche
-      if (currentHour < startHour) { // Esto pasa cuando currentHour=0 y startHour=23
-        return dataHour >= startHour || dataHour >= 0;
+      if (timeA <= currentTimestamp && timeB > currentTimestamp) {
+        startIndex = i;
+        break;
       }
-      
-      // Caso normal
-      return dataHour >= startHour;
-    });
-    
-    console.log(`Pronóstico: Filtrando desde la hora ${startHour} (hora actual: ${currentHour})`);
-    console.log(`Datos completos: ${formattedData.length}, Datos filtrados: ${filteredData.length}`);
-    
-    // Si no hay suficientes datos después de filtrar, devolver todos
-    if (filteredData.length === 0) {
-      console.log('No hay datos después de filtrar, usando todos los datos disponibles');
-      return formattedData;
     }
+    
+    // Si no encontramos un índice adecuado, comenzamos desde el principio
+    if (startIndex === -1) {
+      startIndex = 0;
+    }
+    
+    // Tomamos hasta 48 horas de datos (o menos si no hay tantos)
+    const hoursToShow = 48;
+    const endIndex = Math.min(startIndex + hoursToShow, formattedData.length);
+    
+    const filteredData = formattedData.slice(startIndex, endIndex);
+    
+    console.log(`Pronóstico: Mostrando datos desde ${new Date(filteredData[0].time).toLocaleString()} hasta ${new Date(filteredData[filteredData.length-1].time).toLocaleString()}`);
+    console.log(`Datos completos: ${formattedData.length}, Datos filtrados: ${filteredData.length}`);
     
     return filteredData;
   } catch (error) {
@@ -147,7 +152,6 @@ export async function getProjectionData(coords: Coordinates, hoursAhead: number)
     const today = new Date();
     const targetDate = formatDate(today);
     const currentYear = today.getUTCFullYear();
-    const currentHour = today.getHours();
     
     // Incrementamos a 10 años para obtener proyecciones más precisas
     const NUM_YEARS_HISTORY = 10;
@@ -186,47 +190,58 @@ export async function getProjectionData(coords: Coordinates, hoursAhead: number)
     // Calcular promedios para todas las horas disponibles
     const historicalAverages = calculateAverages(allHourlyData);
     
-    // Filtrar por hora: mostrar desde una hora antes de la hora actual
-    const startHour = currentHour > 0 ? currentHour - 1 : 23; // Si es hora 0, mostrar desde hora 23
-    const endHour = (currentHour + hoursAhead) % 24; // Calcular la hora final (módulo 24 para manejar el ciclo de 24 horas)
-    
-    console.log(`Filtrando desde hora ${startHour} hasta hora ${endHour} (hora actual: ${currentHour})`);
-    
-    // Separar los datos por hora para facilitar el filtrado
-    const hourToDataMap: { [hour: number]: WeatherDataPoint } = {};
-    
-    historicalAverages.forEach(dataPoint => {
-      const dataHour = new Date(dataPoint.time).getHours();
-      hourToDataMap[dataHour] = dataPoint;
-    });
-    
-    // Construir el arreglo de datos filtrados
-    const filteredData: WeatherDataPoint[] = [];
-    
-    // Agregar la hora anterior a la actual
-    if (hourToDataMap[startHour]) {
-      filteredData.push(hourToDataMap[startHour]);
+    if (historicalAverages.length === 0) {
+      throw new Error('No data after calculating averages');
     }
     
-    // Agregar la hora actual y las horas siguientes
-    for (let h = 0; h <= hoursAhead; h++) {
-      const hourToAdd = (currentHour + h) % 24;
-      if (hourToDataMap[hourToAdd]) {
-        filteredData.push(hourToDataMap[hourToAdd]);
+    // Organizar los datos por hora (0-23)
+    const hourlyDataMap: { [hour: number]: WeatherDataPoint } = {};
+    historicalAverages.forEach(dataPoint => {
+      const hour = new Date(dataPoint.time).getHours();
+      hourlyDataMap[hour] = dataPoint;
+    });
+    
+    // Crear una secuencia continua de horas empezando por una hora antes de la hora actual
+    const currentHour = today.getHours();
+    const startHour = currentHour > 0 ? currentHour - 1 : 23; // Si es hora 0, comenzar desde las 23 del día anterior
+    const result: WeatherDataPoint[] = [];
+    
+    // Obtener desde una hora antes hasta hoursAhead+1 horas después de la hora actual
+    for (let i = 0; i <= hoursAhead + 2; i++) { // +2 para incluir una hora antes y una hora más al final
+      const hourOffset = i - 1; // -1 para comenzar una hora antes
+      const hour = ((startHour + hourOffset) % 24 + 24) % 24; // Aseguramos que sea positivo
+      
+      if (hourlyDataMap[hour]) {
+        // Crear una copia del datapoint con la hora actualizada al día correcto
+        const newDataPoint = { ...hourlyDataMap[hour] };
+        
+        // Calcular el día correcto (ayer, hoy o mañana)
+        const dateCopy = new Date(today);
+        
+        if (hourOffset < 0) {
+          // Si estamos en la hora anterior y es 23 (cuando la hora actual es 0), hay que ir al día anterior
+          if (startHour === 23 && currentHour === 0) {
+            dateCopy.setDate(dateCopy.getDate() - 1);
+          }
+        } else if (hour < currentHour && hourOffset > 0) {
+          // Si la hora calculada es menor que la hora actual y no es la hora anterior, significa que pasamos al día siguiente
+          dateCopy.setDate(dateCopy.getDate() + 1);
+        }
+        
+        // Establecer la hora correcta
+        dateCopy.setHours(hour, 0, 0, 0);
+        
+        // Asignar el timestamp correcto
+        newDataPoint.time = dateCopy.toISOString();
+        
+        result.push(newDataPoint);
       }
     }
     
-    console.log(`Hora actual: ${currentHour}. Mostrando datos desde hace 1 hora hasta ${hoursAhead} horas adelante`);
-    console.log(`Datos completos: ${historicalAverages.length}, Datos filtrados: ${filteredData.length}`);
+    console.log(`Proyección: Mostrando datos desde ${new Date(result[0].time).toLocaleString()} hasta ${new Date(result[result.length-1].time).toLocaleString()}`);
+    console.log(`Datos totales: ${result.length} horas`);
     
-    // Verificar si tenemos suficientes datos (debería ser hoursAhead + 1 para incluir la hora actual)
-    if (filteredData.length < hoursAhead + 1) {
-      console.log('No hay suficientes datos después de filtrar, usando los primeros datos disponibles');
-      return historicalAverages.slice(0, hoursAhead + 2); // +2 para incluir la hora actual y una hora antes
-    }
-    
-    // Devolver los datos filtrados
-    return filteredData;
+    return result;
   } catch (error) {
     console.error('Error fetching projection data:', error);
     throw error;

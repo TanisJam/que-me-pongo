@@ -71,6 +71,7 @@ export default function Home() {
               return null;
             })
           ]);
+          console.log('<<forecastResult:>>', forecastResult);
           
           // Actualizar los estados con los resultados
           if (projectionResult) setProjectionData(projectionResult);
@@ -113,6 +114,7 @@ export default function Home() {
         return null;
       })
     ]).then(([projectionResult, forecastResult]) => {
+      console.log('<<reload forecastResult:>>', forecastResult);
       if (projectionResult) setProjectionData(projectionResult);
       if (forecastResult) setForecastData(forecastResult);
     }).finally(() => {
