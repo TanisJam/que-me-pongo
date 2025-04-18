@@ -62,18 +62,26 @@ interface RecommendationsListProps {
 const RecommendationsList: React.FC<RecommendationsListProps> = ({ conditions }) => {
   return (
     <div className="bg-white dark:bg-neutral-800 p-4 rounded-lg shadow">
-      <h3 className="text-lg font-bold mb-2">¿Qué me pongo?</h3>
-      <div className="space-y-2">
+      <h3 className="text-lg font-bold mb-4">¿Qué me pongo?</h3>
+      <div className="space-y-4">
         {conditions.map((condition, index) => (
-          <div key={index} className="flex items-start">
-            <div className="mr-2">
-              <WeatherIcon condition={condition} size="md" />
-            </div>
-            <div>
-              <div className="font-medium">{condition.label}</div>
-              <div className="text-sm text-gray-600 dark:text-gray-300">
-                {condition.recommendation}
+          <div key={index} className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
+            <div className="flex items-start mb-2">
+              <div className="mr-3 mt-1">
+                <span className={condition.color}>
+                  {condition.icon}
+                </span>
               </div>
+              <div>
+                <div className="font-semibold text-base mb-1">{condition.condition}</div>
+                <div className="text-sm text-gray-600 dark:text-gray-300">
+                  {getSugerenciaDetallada(condition)}
+                </div>
+              </div>
+            </div>
+            <div className="mt-2 flex items-center text-sm text-gray-700 dark:text-gray-300">
+              <div className="mr-2">{condition.clothingIcon}</div>
+              <div><span className="font-medium">Sugerencia:</span> {condition.clothing}</div>
             </div>
           </div>
         ))}
@@ -81,6 +89,42 @@ const RecommendationsList: React.FC<RecommendationsListProps> = ({ conditions })
     </div>
   );
 };
+
+// Función para generar una sugerencia más detallada basada en la condición
+function getSugerenciaDetallada(condition: WeatherCondition): string {
+  switch (condition.condition) {
+    case 'Muy caluroso':
+      return 'Las temperaturas son muy altas. Usa ropa ligera y transpirable. No olvides protegerte del sol y mantenerte hidratado.';
+    case 'Caluroso':
+      return 'Hace calor, considera usar ropa ligera y cómoda. Es buena idea tener a mano algo para el sol.';
+    case 'Temperatura agradable':
+      return 'El clima es agradable. Puedes vestir con comodidad sin preocuparte por el frío o el calor.';
+    case 'Frío':
+      return 'Hay temperatura baja. Considera llevar un abrigo o chaqueta para mantenerte cómodo.';
+    case 'Muy frío':
+      return 'Las temperaturas son muy bajas. Abrígate bien con varias capas y no olvides guantes y gorro.';
+    case 'Lluvia intensa':
+      return 'Hay mucha lluvia prevista. Es esencial llevar impermeable y calzado adecuado para evitar mojarse.';
+    case 'Lluvia moderada':
+      return 'Se espera lluvia moderada. Un paraguas o impermeable será necesario.';
+    case 'Lluvia ligera':
+      return 'Hay posibilidad de lluvia ligera. Ten a mano algo para cubrirte en caso necesario.';
+    case 'Cielo despejado':
+      return 'El día se presenta despejado. Disfruta del buen tiempo, pero considera protección solar si pasarás tiempo al aire libre.';
+    case 'Humedad alta':
+      return 'La humedad es alta. La ropa transpirable te ayudará a sentirte más cómodo.';
+    case 'Ambiente seco':
+      return 'El ambiente está seco. Mantente hidratado y considera usar humectante para la piel.';
+    case 'Viento fuerte':
+      return 'Hay viento fuerte. Una chaqueta cortavientos ayudará a protegerte de las ráfagas.';
+    case 'Viento moderado':
+      return 'Hay algo de viento. Considera llevar una chaqueta ligera o prenda que te proteja.';
+    case 'Condiciones normales':
+      return 'Las condiciones meteorológicas son normales. Puedes vestir con ropa cómoda acorde a la estación.';
+    default:
+      return 'Viste de acuerdo con la temperatura actual y lleva contigo lo necesario para cualquier cambio en el clima.';
+  }
+}
 
 // Función auxiliar para calcular el promedio
 function average(values: number[]): number | null {
