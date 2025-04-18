@@ -10,6 +10,7 @@ import SummaryCard from '@/components/SummaryCard';
 import ThemeToggle from '@/components/ThemeToggle';
 import AlertBanner from '@/components/AlertBanner';
 import WeatherRecommendations from '@/components/WeatherRecommendations';
+import WaveLoader from '@/components/WaveLoader';
 
 // Helper function to format date as YYYY-MM-DD
 function formatDate(date: Date): string {
@@ -71,7 +72,6 @@ export default function Home() {
               return null;
             })
           ]);
-          console.log('<<forecastResult:>>', forecastResult);
           
           // Actualizar los estados con los resultados
           if (projectionResult) setProjectionData(projectionResult);
@@ -127,60 +127,95 @@ export default function Home() {
   const isLoading = isProjectionLoading || isForecastLoading;
 
   return (
-    <main className="flex min-h-screen flex-col items-center p-6 md:p-12 lg:p-24 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 transition-colors duration-300">
-      <header className="w-full max-w-5xl flex justify-between items-center mb-8">
-        <h1 className="text-2xl md:text-3xl font-bold">¿Qué me pongo?</h1>
+    <main className="min-h-screen flex flex-col items-center p-0" style={{ background: 'var(--background)' }}>
+      <header className="header-block w-full max-w-4xl mt-8" style={{ marginBottom: 0 }}>
+        <h1 style={{ fontSize: '2.2rem', fontWeight: 800, letterSpacing: '-1px', margin: 0 }}>¿Qué me pongo?</h1>
         <ThemeToggle />
       </header>
 
-      <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <LocationSearch onLocationSelect={handleLocationSelect} />
-      </div>
+      {/* Si no hay ubicación, solo mostrar la barra de búsqueda centrada y un mensaje */}
+      {!coords.lat && (
+        <div style={{ width: '100%', maxWidth: 480, margin: '64px auto 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 32 }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--primary-black)', marginBottom: 12, textAlign: 'center' }}>
+            Busca una ubicación para ver el pronóstico y recomendaciones
+          </div>
+          <LocationSearch onLocationSelect={handleLocationSelect} fullWidth />
+        </div>
+      )}
 
-      <div className="w-full max-w-5xl">
-        {isLoading && <p className="text-center">Cargando datos meteorológicos...</p>}
-        
-        {projectionError && (
-          <AlertBanner 
-            type="error"
-            message={`Error al cargar datos de proyección: ${projectionError.message}`}
-            onRetry={reloadData}
-            onDismiss={() => setProjectionError(null)}
-          />
-        )}
-        
-        {forecastError && (
-          <AlertBanner 
-            type="error"
-            message={`Error al cargar datos de pronóstico: ${forecastError.message}`}
-            onRetry={reloadData}
-            onDismiss={() => setForecastError(null)}
-          />
-        )}
+      {/* Si hay ubicación, mostrar el contenedor principal azul y los bloques internos */}
+      {coords.lat && (
+        <section
+          className="w-full max-w-4xl"
+          style={{
+            background: 'var(--primary-blue)',
+            border: '5px solid var(--primary-black)',
+            borderRadius: 32,
+            marginTop: 0,
+            marginBottom: 0,
+            padding: '32px 24px',
+            boxShadow: '6px 6px 0 var(--primary-black)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 28,
+          }}
+        >
+          {/* Recomendaciones */}
+          <div className="neobrutal-card" style={{ background: 'var(--primary-white)', margin: 0, padding: 0 }}>
+            {projectionData ? (
+              <WeatherRecommendations data={projectionData} />
+            ) : (
+              <div className="section-title text-center" style={{ background: 'var(--primary-yellow)', color: 'var(--primary-black)', marginBottom: 0, borderRadius: 12 }}>¿Qué me pongo?</div>
+            )}
+          </div>
 
-        {coords.lat && !isLoading && !projectionError && !forecastError && (
-            <div className="space-y-8">
-                {projectionData && forecastData && (
-                   <WeatherChart
-                     forecastData={forecastData}
-                     projectionData={projectionData}
-                     variable="temperature_2m"
-                     label="Temperatura"
-                     hoursAhead={hoursAhead}
-                   />
-                 )}
-                 
-                 {projectionData && (
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                     <SummaryCard projectionData={projectionData} hoursToShow={hoursAhead} />
-                     <WeatherRecommendations data={projectionData} />
-                   </div>
-                 )}
-            </div>
-        )}
+          {/* Búsqueda de ubicación: fondo amarillo */}
+          <div className="neobrutal-card" style={{ width: '100%', margin: 0, background: 'var(--primary-yellow)', padding: 20 }}>
+            <LocationSearch onLocationSelect={handleLocationSelect} fullWidth />
+          </div>
 
-        {!coords.lat && <p className="text-center text-neutral-500 dark:text-neutral-400">Busca una ubicación para ver la proyección del tiempo.</p>}
-      </div>
+          {/* Gráfica: fondo blanco */}
+          <div className="neobrutal-card" style={{ background: 'var(--primary-white)', margin: 0, padding: 20 }}>
+            {isLoading && (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 80 }}>
+                <WaveLoader height={48} width={120} />
+              </div>
+            )}
+            {projectionError && (
+              <AlertBanner 
+                type="error"
+                message={`Error al cargar datos de proyección: ${projectionError.message}`}
+                onRetry={reloadData}
+                onDismiss={() => setProjectionError(null)}
+              />
+            )}
+            {forecastError && (
+              <AlertBanner 
+                type="error"
+                message={`Error al cargar datos de pronóstico: ${forecastError.message}`}
+                onRetry={reloadData}
+                onDismiss={() => setForecastError(null)}
+              />
+            )}
+            {projectionData && forecastData && !isLoading && !projectionError && !forecastError && (
+              <WeatherChart
+                forecastData={forecastData}
+                projectionData={projectionData}
+                variable="temperature_2m"
+                label="Temperatura"
+                hoursAhead={hoursAhead}
+              />
+            )}
+          </div>
+
+          {/* Resumen pronóstico: fondo rojo, texto blanco */}
+          <div style={{ background: 'var(--primary-red)', border: '3px solid var(--primary-black)', borderRadius: 18, padding: 20, margin: 0, color: 'var(--primary-white)' }}>
+            {projectionData && !isLoading && !projectionError && !forecastError && (
+              <SummaryCard projectionData={projectionData} forecastData={forecastData ?? undefined} hoursToShow={hoursAhead} />
+            )}
+          </div>
+        </section>
+      )}
     </main>
   );
 }

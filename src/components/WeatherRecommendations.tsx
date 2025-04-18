@@ -23,27 +23,27 @@ export const WeatherRecommendations: React.FC<WeatherRecommendationsProps> = ({ 
   
   // Obtener valores máximos para detectar condiciones extremas
   const maxValues = {
-    temperature_2m: max(data.map(d => d.temperature_2m).filter(isDefined)),
-    precipitation: max(data.map(d => d.precipitation).filter(isDefined)),
-    relative_humidity_2m: max(data.map(d => d.relative_humidity_2m).filter(isDefined)),
-    wind_speed_10m: max(data.map(d => d.wind_speed_10m).filter(isDefined)),
+    temperature_2m: max(data.map(d => d.temperature_2m).filter(isDefined) as number[]),
+    precipitation: max(data.map(d => d.precipitation).filter(isDefined) as number[]),
+    relative_humidity_2m: max(data.map(d => d.relative_humidity_2m).filter(isDefined) as number[]),
+    wind_speed_10m: max(data.map(d => d.wind_speed_10m).filter(isDefined) as number[]),
   };
   
   // Usar los valores máximos para condiciones extremas
   const conditions = getWeatherConditions(
-    maxValues.temperature_2m, 
-    maxValues.precipitation, 
-    maxValues.relative_humidity_2m, 
-    maxValues.wind_speed_10m
+    maxValues.temperature_2m ?? undefined,
+    maxValues.precipitation ?? undefined,
+    maxValues.relative_humidity_2m ?? undefined,
+    maxValues.wind_speed_10m ?? undefined
   );
   
   // Si no hay condiciones extremas, usar promedios
   if (conditions.length <= 1) {
     const avgConditions = getWeatherConditions(
-      averages.temperature_2m, 
-      averages.precipitation, 
-      averages.relative_humidity_2m, 
-      averages.wind_speed_10m
+      averages.temperature_2m ?? undefined,
+      averages.precipitation ?? undefined,
+      averages.relative_humidity_2m ?? undefined,
+      averages.wind_speed_10m ?? undefined
     );
     
     if (avgConditions.length > conditions.length) {
@@ -61,27 +61,40 @@ interface RecommendationsListProps {
 
 const RecommendationsList: React.FC<RecommendationsListProps> = ({ conditions }) => {
   return (
-    <div className="bg-white dark:bg-neutral-800 p-4 rounded-lg shadow">
-      <h3 className="text-lg font-bold mb-4">¿Qué me pongo?</h3>
-      <div className="space-y-4">
+    <div className="neobrutal-card" style={{ background: 'var(--primary-blue)', color: 'var(--primary-white)', margin: 0, padding: 0 }}>
+      <h3 className="section-title text-center" style={{ background: 'var(--primary-yellow)', color: 'var(--primary-black)', marginBottom: 0, borderRadius: 12 }}>¿Qué me pongo?</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: 20 }}>
         {conditions.map((condition, index) => (
-          <div key={index} className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
-            <div className="flex items-start mb-2">
-              <div className="mr-3 mt-1">
-                <span className={condition.color}>
-                  {condition.icon}
-                </span>
-              </div>
-              <div>
-                <div className="font-semibold text-base mb-1">{condition.condition}</div>
-                <div className="text-sm text-gray-600 dark:text-gray-300">
-                  {getSugerenciaDetallada(condition)}
-                </div>
-              </div>
+          <div
+            key={index}
+            className="neobrutal-card"
+            style={{
+              background: 'var(--primary-white)',
+              color: 'var(--primary-black)',
+              border: '3px solid var(--primary-black)',
+              borderRadius: 14,
+              padding: 16,
+              marginBottom: 0,
+              boxShadow: '2px 2px 0 var(--primary-black)',
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              minHeight: 80,
+              gap: 16,
+              transition: 'box-shadow 0.15s, background 0.15s',
+            }}
+            tabIndex={0}
+          >
+            <div style={{ marginRight: 16, fontSize: 32, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44 }}>
+              <span>{condition.icon}</span>
             </div>
-            <div className="mt-2 flex items-center text-sm text-gray-700 dark:text-gray-300">
-              <div className="mr-2">{condition.clothingIcon}</div>
-              <div><span className="font-medium">Sugerencia:</span> {condition.clothing}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 4 }}>{condition.condition}</div>
+              <div style={{ fontSize: 15 }}>{getSugerenciaDetallada(condition)}</div>
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', fontSize: 15 }}>
+                <div style={{ marginRight: 8, fontSize: 22 }}>{condition.clothingIcon}</div>
+                <div><span style={{ fontWeight: 700 }}>Sugerencia:</span> {condition.clothing}</div>
+              </div>
             </div>
           </div>
         ))}
@@ -128,14 +141,16 @@ function getSugerenciaDetallada(condition: WeatherCondition): string {
 
 // Función auxiliar para calcular el promedio
 function average(values: number[]): number | null {
-  if (values.length === 0) return null;
-  return values.reduce((sum, val) => sum + val, 0) / values.length;
+  const filtered = values.filter((v): v is number => typeof v === 'number');
+  if (filtered.length === 0) return null;
+  return filtered.reduce((sum, val) => sum + val, 0) / filtered.length;
 }
 
 // Función auxiliar para obtener el valor máximo
 function max(values: number[]): number | null {
-  if (values.length === 0) return null;
-  return Math.max(...values);
+  const filtered = values.filter((v): v is number => typeof v === 'number');
+  if (filtered.length === 0) return null;
+  return Math.max(...filtered);
 }
 
 // Función auxiliar para filtrar valores no nulos

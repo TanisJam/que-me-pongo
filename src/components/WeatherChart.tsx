@@ -113,8 +113,8 @@ export default function WeatherChart({ forecastData, projectionData, variable, l
         borderColor: 'rgb(59, 130, 246)',
         backgroundColor: 'rgba(59, 130, 246, 0.5)',
         tension: 0.1,
-        pointRadius: 4,
-        borderWidth: 2,
+        pointRadius: 7,
+        borderWidth: 6,
         pointBackgroundColor: 'rgb(59, 130, 246)',
       },
       {
@@ -123,8 +123,8 @@ export default function WeatherChart({ forecastData, projectionData, variable, l
         borderColor: 'rgb(239, 68, 68)',
         backgroundColor: 'rgba(239, 68, 68, 0.5)',
         tension: 0.1,
-        pointRadius: 4,
-        borderWidth: 2,
+        pointRadius: 7,
+        borderWidth: 6,
         pointBackgroundColor: 'rgb(239, 68, 68)',
       },
     ],
@@ -176,11 +176,28 @@ export default function WeatherChart({ forecastData, projectionData, variable, l
     },
   };
 
+  const legendLabels = options.plugins && options.plugins.legend && options.plugins.legend.labels
+    ? {
+        ...options.plugins.legend.labels,
+        font: { size: 13 },
+        color: 'var(--primary-black)',
+      }
+    : undefined;
+
   return (
-    <div className="relative h-64 md:h-80 lg:h-96 bg-white dark:bg-neutral-800 p-4 rounded-lg shadow">
+    <div className="neobrutal-card" style={{ background: 'var(--primary-white)', height: '22rem', minHeight: 320, boxShadow: '6px 6px 0 0 var(--primary-black)', border: '4px solid var(--primary-black)', padding: 24 }}>
       <Line
         ref={chartRef}
-        options={options}
+        options={{
+          ...options,
+          plugins: {
+            ...options.plugins,
+            legend: {
+              ...options.plugins?.legend,
+              labels: legendLabels,
+            },
+          },
+        }}
         data={chartData}
         aria-label={`Gráfico de ${label} comparando pronóstico y proyección`}
         role="img"

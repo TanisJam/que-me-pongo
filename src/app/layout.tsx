@@ -26,8 +26,12 @@ export default function RootLayout({
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        style={{ background: 'var(--background)', minHeight: '100vh' }}
       >
         {children}
+        {/* <footer className="header-block" style={{ borderRadius: '0 0 18px 18px', marginTop: 40, fontSize: 18, justifyContent: 'center' }}>
+          © 2024 ¿Qué me pongo? | Hecho con ♥
+        </footer> */}
       </body>
     </html>
   );

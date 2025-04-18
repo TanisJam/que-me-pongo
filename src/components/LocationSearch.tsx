@@ -15,9 +15,10 @@ interface LocationSuggestion {
 
 interface LocationSearchProps {
   onLocationSelect: (coords: { lat: number; lon: number }) => void;
+  fullWidth?: boolean;
 }
 
-export default function LocationSearch({ onLocationSelect }: LocationSearchProps) {
+export default function LocationSearch({ onLocationSelect, fullWidth = false }: LocationSearchProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debouncedSearchTerm = useDebounce(searchTerm, 300); // Debounce input by 300ms
@@ -53,35 +54,76 @@ export default function LocationSearch({ onLocationSelect }: LocationSearchProps
   };
 
   return (
-    <div className="relative w-full max-w-xs" onBlur={handleBlur}> {/* Added onBlur */} 
-      <label htmlFor="location-search" className="block text-sm font-medium mb-1">
-        Buscar ubicación
-      </label>
+    <div
+      style={{
+        width: '100%',
+        position: 'relative',
+        margin: 0,
+        padding: 0,
+        background: 'none',
+        boxShadow: 'none',
+        maxWidth: fullWidth ? '100%' : 340,
+      }}
+      onBlur={handleBlur}
+    >
       <input
         id="location-search"
         type="text"
         value={searchTerm}
         onChange={handleInputChange}
-        onFocus={() => searchTerm && setShowSuggestions(true)} // Show on focus if there's text
-        placeholder="p. ej., Madrid, España"
-        className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100"
+        onFocus={() => searchTerm && setShowSuggestions(true)}
+        placeholder="Buscar ubicación..."
+        style={{
+          width: '100%',
+          height: 48,
+          padding: '0 18px',
+          border: '3px solid var(--primary-black)',
+          borderRadius: 14,
+          fontSize: 20,
+          fontWeight: 700,
+          background: 'var(--primary-white)',
+          color: 'var(--primary-black)',
+          outline: 'none',
+          marginBottom: 0,
+          boxShadow: showSuggestions ? '0 0 0 3px var(--primary-yellow)' : 'none',
+          transition: 'box-shadow 0.2s',
+        }}
       />
-
       {showSuggestions && (
-          <div className="absolute z-10 mt-1 w-full bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-md shadow-lg max-h-60 overflow-y-auto">
-          {isLoading && <div className="px-3 py-2 text-sm text-neutral-500">Cargando...</div>}
-          {error && <div className="px-3 py-2 text-sm text-red-500">Error al buscar ubicaciones.</div>}
+        <div style={{
+          position: 'absolute',
+          zIndex: 10,
+          top: 50,
+          left: 0,
+          width: '100%',
+          background: 'var(--primary-white)',
+          border: '3px solid var(--primary-black)',
+          borderTop: 'none',
+          borderBottomLeftRadius: 14,
+          borderBottomRightRadius: 14,
+          boxShadow: '2px 2px 0 var(--primary-black)',
+          maxHeight: 220,
+          overflowY: 'auto',
+        }}>
+          {isLoading && <div style={{ padding: '10px 16px', fontSize: 15, color: 'var(--primary-blue)' }}>Cargando...</div>}
+          {error && <div style={{ padding: '10px 16px', fontSize: 15, color: 'var(--primary-red)' }}>Error al buscar ubicaciones.</div>}
           {suggestions && suggestions.length > 0 && (
-            <ul>
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
               {suggestions.map((location) => (
                 <li
                   key={location.id}
                   onClick={() => handleSuggestionClick(location)}
-                  className="px-3 py-2 text-sm cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-700"
-                  // Add tabIndex to make it focusable
-                  tabIndex={0} 
-                  // Handle selection with Enter key
-                  onKeyDown={(e) => e.key === 'Enter' && handleSuggestionClick(location)} 
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSuggestionClick(location)}
+                  style={{
+                    padding: '12px 18px',
+                    fontSize: 17,
+                    fontWeight: 700,
+                    color: 'var(--primary-black)',
+                    cursor: 'pointer',
+                    borderBottom: '1px solid var(--primary-yellow)',
+                    background: 'var(--primary-white)',
+                  }}
                 >
                   {location.name}
                 </li>
@@ -89,7 +131,7 @@ export default function LocationSearch({ onLocationSelect }: LocationSearchProps
             </ul>
           )}
           {suggestions && suggestions.length === 0 && debouncedSearchTerm && !isLoading && (
-             <div className="px-3 py-2 text-sm text-neutral-500">No se encontraron ubicaciones.</div>
+            <div style={{ padding: '10px 16px', fontSize: 15, color: 'var(--primary-blue)' }}>No se encontraron ubicaciones.</div>
           )}
         </div>
       )}
