@@ -10,6 +10,7 @@ import WeatherChart from '@/components/WeatherChart';
 import SummaryCard from '@/components/SummaryCard';
 import ThemeToggle from '@/components/ThemeToggle';
 import AlertBanner from '@/components/AlertBanner';
+import WeatherRecommendations from '@/components/WeatherRecommendations';
 
 // Helper function to format date as YYYY-MM-DD
 function formatDate(date: Date): string {
@@ -139,8 +140,12 @@ export default function Home() {
                      hoursAhead={hoursAhead}
                    />
                  )}
+                 
                  {projectionData && (
-                   <SummaryCard projectionData={projectionData} hoursToShow={hoursAhead <= 6 ? hoursAhead : 6} />
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                     <SummaryCard projectionData={projectionData} hoursToShow={hoursAhead <= 6 ? hoursAhead : 6} />
+                     <WeatherRecommendations data={projectionData} />
+                   </div>
                  )}
             </div>
         )}

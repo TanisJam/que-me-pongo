@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -16,6 +16,8 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import 'chartjs-adapter-date-fns';
+import { WeatherIconsGroup } from './WeatherIcons';
+import { getWeatherConditions } from './WeatherIcons';
 
 // Register Chart.js components
 ChartJS.register(
@@ -58,6 +60,9 @@ const getUnit = (variable: string): string => {
 };
 
 export default function WeatherChart({ forecastData, projectionData, variable, label, hoursAhead }: WeatherChartProps) {
+  
+  // Referencia al chart para acceder a sus métodos
+  const chartRef = useRef<ChartJS<"line">>(null);
   
   // --- Debug logging ---
   console.log('WeatherChart rendering with:');
@@ -223,9 +228,126 @@ export default function WeatherChart({ forecastData, projectionData, variable, l
     },
   };
 
+  // Efecto para renderizar los iconos después de que el gráfico se haya actualizado
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    
+    const renderIcons = () => {
+      const ctx = chart.ctx;
+      if (!ctx) return;
+      
+      const meta0 = chart.getDatasetMeta(0); // Forecast
+      const meta1 = chart.getDatasetMeta(1); // Projection
+      
+      // Limpiar íconos anteriores
+      const iconContainers = document.querySelectorAll('.weather-icon-container');
+      iconContainers.forEach(container => container.remove());
+      
+      // Crear contenedor principal para los íconos
+      const chartContainer = chart.canvas.parentNode as HTMLElement;
+      if (!chartContainer) return;
+      
+      chartContainer.style.position = 'relative';
+      
+      // Renderizar íconos para forecast
+      meta0.data.forEach((point, index) => {
+        if (forecastValues[index] === null) return;
+        
+        const data = {
+          temperature_2m: forecastValues[index],
+          precipitation: forecastData[index]?.precipitation,
+          relative_humidity_2m: forecastData[index]?.relative_humidity_2m,
+          wind_speed_10m: forecastData[index]?.wind_speed_10m
+        };
+        
+        renderIconAtPoint(chartContainer, point, data, true);
+      });
+      
+      // Renderizar íconos para projection
+      meta1.data.forEach((point, index) => {
+        if (projectionValues[index] === null) return;
+        
+        const data = {
+          temperature_2m: projectionValues[index],
+          precipitation: projectionData[index]?.precipitation,
+          relative_humidity_2m: projectionData[index]?.relative_humidity_2m,
+          wind_speed_10m: projectionData[index]?.wind_speed_10m
+        };
+        
+        renderIconAtPoint(chartContainer, point, data, false);
+      });
+    };
+    
+    // Renderizar íconos después de que el gráfico se actualice
+    chart.options.animation = {
+      ...chart.options.animation,
+      onComplete: renderIcons
+    };
+    
+    // También renderizar íconos cuando cambian los datos
+    renderIcons();
+    
+    // Limpiar íconos al desmontar
+    return () => {
+      const iconContainers = document.querySelectorAll('.weather-icon-container');
+      iconContainers.forEach(container => {
+        // Primero desmontar cualquier root de React
+        try {
+          const reactRoot = (container as any)._reactRootContainer;
+          if (reactRoot) {
+            reactRoot.unmount();
+          }
+        } catch (e) {
+          console.error("Error unmounting React component", e);
+        }
+        // Luego eliminar el contenedor
+        container.remove();
+      });
+    };
+  }, [forecastData, projectionData, forecastValues, projectionValues]);
+  
+  // Función para renderizar un ícono en la posición de un punto
+  const renderIconAtPoint = (
+    container: HTMLElement, 
+    point: any, 
+    data: any, 
+    isForecast: boolean
+  ) => {
+    const pos = point.getCenterPoint();
+    
+    // Crear contenedor para el ícono
+    const iconContainer = document.createElement('div');
+    iconContainer.className = 'weather-icon-container absolute';
+    iconContainer.style.left = `${pos.x}px`;
+    iconContainer.style.top = `${pos.y - 25}px`; // Posicionarlo encima del punto
+    iconContainer.style.transform = 'translate(-50%, -100%)';
+    iconContainer.style.pointerEvents = 'none';
+    
+    // Renderizar componente React en el contenedor
+    if (typeof window !== 'undefined') {
+      const ReactDOM = require('react-dom/client');
+      // Crear root
+      const root = ReactDOM.createRoot(iconContainer);
+      // Renderizar el componente usando la nueva API
+      root.render(
+        <WeatherIconsGroup 
+          temperature={data.temperature_2m}
+          precipitation={data.precipitation}
+          humidity={data.relative_humidity_2m}
+          windSpeed={data.wind_speed_10m}
+          size="sm"
+        />
+      );
+    }
+    
+    container.appendChild(iconContainer);
+  };
+  
   return (
     <div className="relative h-64 md:h-80 lg:h-96 bg-white dark:bg-neutral-800 p-4 rounded-lg shadow">
       <Line
+        ref={chartRef}
         options={options}
         data={chartData}
         aria-label={`${label} chart comparing forecast and projection`}
